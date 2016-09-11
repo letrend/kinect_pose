@@ -75,6 +75,8 @@ public:
 
         dev->setColorFrameListener(listener);
         dev->setIrAndDepthFrameListener(listener);
+
+        irCameraParams = dev->getIrCameraParams();
     }
 
     ~MyFreenectDevice(){
@@ -141,6 +143,7 @@ public:
         }
     }
 
+    libfreenect2::Freenect2Device::IrCameraParams irCameraParams;
 private:
     MyFileLogger *filelogger;
     libfreenect2::Freenect2 freenect2;

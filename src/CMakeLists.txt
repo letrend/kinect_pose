@@ -34,7 +34,7 @@ find_package(Sophus REQUIRED)
 # OpenCV
 FIND_PACKAGE(OpenCV COMPONENTS opencv_core opencv_highgui opencv_imgproc opencv_calib3d REQUIRED)
 
-file(GLOB srcs src/main.cpp ICPCUDA/src/ICPOdometry.cpp)
+file(GLOB srcs ICPCUDA/src/ICPOdometry.cpp)
 file(GLOB cuda ICPCUDA/src/Cuda/*.cu)
 file(GLOB containers ICPCUDA/src/Cuda/containers/*.cpp)
 
@@ -52,10 +52,10 @@ include_directories( include/
 # Application
 #==============================================================================s
 
-CUDA_ADD_EXECUTABLE(kinect_pose ${srcs} ${cuda} ${containers})
+CUDA_ADD_EXECUTABLE(kinect_pose src/main.cpp ${srcs} ${cuda} ${containers})
 target_link_libraries(kinect_pose ${freenect2_LIBRARY} ${OpenCV_LIBS} )
 
 qt4_wrap_cpp(MOC_FILES include/kinectPosePlugin.hpp)
-CUDA_ADD_LIBRARY(kinect_pose_plugin src/kinectPosePlugin.cpp ${MOC_FILES})
+CUDA_ADD_LIBRARY(kinect_pose_plugin src/kinectPosePlugin.cpp ${srcs} ${cuda} ${containers} ${MOC_FILES})
 target_link_libraries(kinect_pose_plugin ${QT_LIBRARIES} ${catkin_LIBRARIES} ${freenect2_LIBRARY} ${OpenCV_LIBS} )
 

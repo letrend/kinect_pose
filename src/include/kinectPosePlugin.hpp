@@ -24,6 +24,7 @@
 #include "icp_wrapper.hpp"
 #include <thread>
 #include <Eigen/Core>
+#include <mutex>
 #endif
 
 using namespace std;
@@ -55,6 +56,12 @@ public:
 
     void publishModel();
 
+public slots:
+    void renderImages();
+
+signals:
+    void imagesReady();
+
 public Q_SLOTS:
     void resetPose();
 private:
@@ -68,4 +75,5 @@ private:
     boost::shared_ptr<std::thread> odometry_thread;
     bool getPose = true;
     Matrix4d pose;
+    mutex mux;
 };

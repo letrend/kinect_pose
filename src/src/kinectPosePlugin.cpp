@@ -1,3 +1,4 @@
+#include <mutex>
 #include "kinectPosePlugin.hpp"
 
 KinectPosePlugin::KinectPosePlugin(QWidget *parent)
@@ -14,6 +15,14 @@ KinectPosePlugin::KinectPosePlugin(QWidget *parent)
     resetpose->setObjectName("resetPose");
     connect(resetpose, SIGNAL(clicked()), this, SLOT(resetPose()));
     frameLayout->addWidget(resetpose);
+
+    QLabel *rgbimage = new QLabel(tr("rgbimage"));
+    rgbimage->setObjectName("rgbimage");
+    frameLayout->addWidget(rgbimage);
+
+    QLabel *depthimage = new QLabel(tr("depthimage"));
+    depthimage->setObjectName("depthimage");
+    frameLayout->addWidget(depthimage);
     
     // Add frameLayout to the frame
     mainFrame->setLayout(frameLayout);
@@ -43,12 +52,17 @@ KinectPosePlugin::KinectPosePlugin(QWidget *parent)
     device = boost::shared_ptr<MyFreenectDevice>(new MyFreenectDevice);
     device->updateFrames();
     device->getDepthMM(depth0);
-    icpcuda = boost::shared_ptr<ICPCUDA>(new ICPCUDA(depth0.cols,depth0.rows));
+    icpcuda = boost::shared_ptr<ICPCUDA>(new ICPCUDA(depth0.cols,depth0.rows, device->irCameraParams.cx,
+                                                     device->irCameraParams.cy, device->irCameraParams.fx,
+                                                     device->irCameraParams.fy));
 
     odometry_thread = boost::shared_ptr<std::thread>(new std::thread(&KinectPosePlugin::poseEstimation, this));
+
+    QObject::connect(this, SIGNAL(imagesReady()), this, SLOT(renderImages()));
 }
 
 KinectPosePlugin::~KinectPosePlugin(){
+    getPose = false;
     odometry_thread->join();
 }
 
@@ -68,11 +82,14 @@ void KinectPosePlugin::resetPose(){
 void KinectPosePlugin::poseEstimation(){
     ROS_INFO("start pose estimation");
     while(getPose){
+        device->updateFrames();
         device->getDepthMM(depth1);
         device->getRgbMapped2Depth(rgb);
+        emit imagesReady();
         icpcuda->getPoseFromDepth(depth0,depth1);
         pose = icpcuda->getPose();
-        depth0 = depth1;
+        std::swap(depth0, depth1);
+        ROS_INFO_STREAM_THROTTLE(1.0,pose);
         publishModel();
     }
     ROS_INFO("stop pose estimation");
@@ -105,6 +122,34 @@ void KinectPosePlugin::publishModel(){
     mesh.pose.orientation.w = q.w();
     mesh.mesh_resource = "package://kinect_pose/models/kinect_v2.STL";
     marker_visualization_pub.publish(mesh);
+}
+
+void KinectPosePlugin::renderImages(){
+
+    QLabel *rgbimage = this->findChild<QLabel *>("rgbimage");
+    cv::Mat rgbcopy;
+    rgb.convertTo(rgbcopy, CV_BGR2RGB);
+    QImage image1= QImage((uchar*) rgbcopy.data, rgbcopy.cols, rgbcopy.rows, rgbcopy.step, QImage::Format_RGB32);
+//
+    //show Qimage using QLabel
+    rgbimage->setPixmap(QPixmap::fromImage(image1));
+    rgbimage->repaint();
+
+//    QLabel *depthimage = this->findChild<QLabel *>("depthimage");
+//    w = depth0.cols;
+//    h = depth0.rows;
+//    QImage qim_depth(w, h, QImage::Format_RGB32);
+//    a = (float*)depth0.data;
+//    for (int i = 0; i < w; i++) {
+//        for (int j = 0; j < h; j++) {
+//            int gray = (int) a[i + w*j];
+//            pixel = qRgb(gray, gray, gray);
+//            qim_depth.setPixel(i, j, pixel);
+//        }
+//    }
+//    pixmap = QPixmap::fromImage(qim_depth);
+//    depthimage->setPixmap(pixmap);
+//    depthimage->repaint();
 }
 
 PLUGINLIB_EXPORT_CLASS(KinectPosePlugin, rviz::Panel)
