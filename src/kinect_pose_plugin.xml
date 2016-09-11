@@ -1,0 +1,9 @@
+<library path="libkinect_pose_plugin">
+    <class name="KinectPosePlugin"
+           type="KinectPosePlugin"
+           base_class_type="rviz::Panel">
+        <description>
+            A panel widget for kinect pose using icpcuda
+        </description>
+    </class>
+</library>
