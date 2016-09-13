@@ -20,6 +20,16 @@ KinectPosePlugin::KinectPosePlugin(QWidget *parent)
     speed->setObjectName("speed");
     frameLayout->addWidget(speed);
 
+    QCheckBox *renderimages = new QCheckBox(tr("render images"));
+    renderimages->setObjectName("renderimages");
+    connect(renderimages, SIGNAL(clicked()), this, SLOT(renderImages()));
+    frameLayout->addWidget(renderimages);
+
+    QCheckBox *showliveview = new QCheckBox(tr("show live view"));
+    showliveview->setObjectName("showliveview");
+    connect(showliveview, SIGNAL(clicked()), this, SLOT(showLiveView()));
+    frameLayout->addWidget(showliveview);
+
     QLabel *rgbimage = new QLabel(tr("rgbimage"));
     rgbimage->setObjectName("rgbimage");
     frameLayout->addWidget(rgbimage);
@@ -51,7 +61,7 @@ KinectPosePlugin::KinectPosePlugin(QWidget *parent)
 
     spinner = boost::shared_ptr<ros::AsyncSpinner>(new ros::AsyncSpinner(1));
 
-    marker_visualization_pub = nh->advertise<visualization_msgs::Marker>("visualization_marker", 100);
+    marker_visualization_pub = nh->advertise<visualization_msgs::Marker>("visualization_marker", 1);
 
     device = boost::shared_ptr<MyFreenectDevice>(new MyFreenectDevice);
     device->updateFrames();
@@ -62,7 +72,7 @@ KinectPosePlugin::KinectPosePlugin(QWidget *parent)
 
     odometry_thread = boost::shared_ptr<std::thread>(new std::thread(&KinectPosePlugin::poseEstimation, this));
 
-    QObject::connect(this, SIGNAL(imagesReady(float)), this, SLOT(renderImages(float)));
+    QObject::connect(this, SIGNAL(dataReady(float)), this, SLOT(updateData(float)));
 }
 
 KinectPosePlugin::~KinectPosePlugin(){
@@ -79,8 +89,19 @@ void KinectPosePlugin::load(const rviz::Config &config) {
 }
 
 void KinectPosePlugin::resetPose(){
-    QPushButton* w = this->findChild<QPushButton*>("initwalkcontroller");
-    w->setText("fuck me");
+    Matrix4d newPose;
+    newPose = Matrix4d::Identity();
+    icpcuda->setInitialPose(newPose);
+}
+
+void KinectPosePlugin::renderImages(){
+    QCheckBox* w = this->findChild<QCheckBox*>("renderimages");
+    renderImages_flag = w->isChecked();
+}
+
+void KinectPosePlugin::showLiveView(){
+    QCheckBox* w = this->findChild<QCheckBox*>("showliveview");
+    showLiveView_flag = w->isChecked();
 }
 
 void KinectPosePlugin::poseEstimation(){
@@ -90,7 +111,7 @@ void KinectPosePlugin::poseEstimation(){
         device->getDepthMM(depth1);
         device->getRgbMapped2Depth(rgb);
         icpcuda->getPoseFromDepth(depth0,depth1);
-        emit imagesReady(icpcuda->mean_time);
+        emit dataReady(icpcuda->mean_time);
         pose = icpcuda->getPose();
 //        ROS_INFO_STREAM_THROTTLE(1.0,"speed: " << icpcuda->mean_time << "\npose\n" << pose);
         std::swap(depth0, depth1);
@@ -100,79 +121,117 @@ void KinectPosePlugin::poseEstimation(){
 
 void KinectPosePlugin::publishModel(){
     visualization_msgs::Marker mesh;
-    mesh.header.frame_id = "world";
+    mesh.header.frame_id = "kinect";
     mesh.ns = "kinect_v2";
     mesh.type = visualization_msgs::Marker::MESH_RESOURCE;
     mesh.color.r = 1.0f;
     mesh.color.g = 1.0f;
     mesh.color.b = 1.0f;
-    mesh.color.a = 0.5;
+    mesh.color.a = 1.0;
     mesh.scale.x = 1.0;
     mesh.scale.y = 1.0;
     mesh.scale.z = 1.0;
     mesh.lifetime = ros::Duration();
     mesh.header.stamp = ros::Time::now();
     mesh.id = 0;
-    Vector3d trans = pose.topRightCorner(3,1);
-    Matrix3d rot = pose.topLeftCorner(3,3);
     Quaterniond q(rot);
-    mesh.pose.position.x = trans(0);
-    mesh.pose.position.y = trans(1);
-    mesh.pose.position.z = trans(2);
-    mesh.pose.orientation.x = q.x();
-    mesh.pose.orientation.y = q.y();
-    mesh.pose.orientation.z = q.z();
-    mesh.pose.orientation.w = q.w();
+    mesh.pose.orientation.x = 0;
+    mesh.pose.orientation.y = 0;
+    mesh.pose.orientation.z = 0;
+    mesh.pose.orientation.w = 1;
     mesh.mesh_resource = "package://kinect_pose/models/kinect_v2.STL";
     marker_visualization_pub.publish(mesh);
 }
 
-void KinectPosePlugin::renderImages(float mean_time){
+void KinectPosePlugin::updateData(float mean_time){
     QLabel *speed = this->findChild<QLabel *>("speed");
     speed->setText("speed: " + QString::number(mean_time) + " ms");
     speed->repaint();
-    {
+
+    trans = pose.topRightCorner(3,1);
+    rot = pose.topLeftCorner(3,3);
+    Quaterniond q(rot);
+
+    ros::Time time = ros::Time::now();
+    tf::Transform tf;
+    tf.setOrigin(tf::Vector3(trans(0), trans(1), trans(2)));
+    tf.setRotation(tf::Quaternion(q.x(), q.y(), q.z(), q.w()));
+    tf_broadcaster.sendTransform(tf::StampedTransform(tf, time, "world", "kinect"));
+
+    if(renderImages_flag) {
         QLabel *rgbmage = this->findChild<QLabel *>("rgbimage");
+        QLabel *depthimage = this->findChild<QLabel *>("depthimage");
         int w = rgb.cols;
         int h = rgb.rows;
-        QImage qim_rgb(w, h, QImage::Format_RGB32);
-        float *a = (float *) rgb.data;
-        QRgb pixel;
-        for (int i = 0; i < w; i++) {
-            for (int j = 0; j < h; j++) {
-                int blue = (int) (a[0 + 3 * (i + w * j)]*255.0f);
-                int green = (int) (a[1 + 3 * (i + w * j)]*255.0f);
-                int red = (int) (a[2 + 3 * (i + w * j)]*255.0f);
-                pixel = qRgb(red, green, blue);
-                qim_rgb.setPixel(i, j, pixel);
-            }
-        }
-        QPixmap pixmap = QPixmap::fromImage(qim_rgb);
-        rgbmage->setPixmap(pixmap);
-        rgbmage->repaint();
-    }
-
-    {
-        QLabel *depthimage = this->findChild<QLabel *>("depthimage");
-        depth0.convertTo(depth0, CV_32F);
-        int w = depth0.cols;
-        int h = depth0.rows;
-        QImage qim_depth(w, h, QImage::Format_RGB32);
-        float *a = (float *) depth0.data;
+        QImage qim_rgb(w, h, QImage::Format_RGB32), qim_depth(w, h, QImage::Format_RGB32);;
+        unsigned short *rgb_ = (unsigned short *) rgb.data;
+        unsigned short *depth_ = (unsigned short *) depth1.data;
         QRgb pixel;
         for (int i = 0; i < w; i++) {
             for (int j = 0; j < h; j++) {
                 // to meter divided by maximum range times max pixel value
-                int gray = (int) (a[i + w * j]/1000.0f/4.5f*255.0f);
-                pixel = qRgb(gray, gray, gray);
+                int distance = (int) (depth_[i + w * j] / 1000.0f / 4.5f * 255.0f);
+                pixel = qRgb(distance, distance, distance);
                 qim_depth.setPixel(i, j, pixel);
+                int blue = (int) rgb_[0 + 3 * (i + w * j)];
+                int green = (int) rgb_[1 + 3 * (i + w * j)];
+                int red = (int) rgb_[2 + 3 * (i + w * j)];
+                pixel = qRgb(red, green, blue);
+                qim_rgb.setPixel(i, j, pixel);
             }
         }
-        QPixmap pixmap = QPixmap::fromImage(qim_depth);
-        depthimage->setPixmap(pixmap);
+        QPixmap pixmap0 = QPixmap::fromImage(qim_rgb);
+        rgbmage->setPixmap(pixmap0);
+        rgbmage->repaint();
+        QPixmap pixmap1 = QPixmap::fromImage(qim_depth);
+        depthimage->setPixmap(pixmap1);
         depthimage->repaint();
     }
-    ROS_INFO_STREAM_THROTTLE(1.0,pose);
+
+    if(showLiveView_flag){
+        visualization_msgs::Marker points;
+        points.header.frame_id = "kinect";
+        points.ns = "RGBD";
+        points.type = visualization_msgs::Marker::POINTS;
+        points.scale.x = 0.01;
+        points.scale.y = 0.01;
+        points.lifetime = ros::Duration();
+        points.header.stamp = ros::Time::now();
+        points.id = 1;
+        points.pose.position.x = trans(0);
+        points.pose.position.y = trans(1);
+        points.pose.position.z = trans(2);
+        points.pose.orientation.x = q.x();
+        points.pose.orientation.y = q.y();
+        points.pose.orientation.z = q.z();
+        points.pose.orientation.w = q.w();
+        int w = rgb.cols;
+        int h = rgb.rows;
+        unsigned short *rgb_ = (unsigned short *) rgb.data;
+        unsigned short *depth_ = (unsigned short *) depth1.data;
+
+        for (int i = 0; i < w; i++) {
+            for (int j = 0; j < h; j++) {
+                Vector3d pos3D;
+                pos3D = device->projectTo3D(i, j);
+                pos3D *= depth_[i + w * j] / 1000.0f;
+                geometry_msgs::Point p;
+                p.x = pos3D(0);
+                p.y = pos3D(1);
+                p.z = pos3D(2);
+                points.points.push_back(p);
+                std_msgs::ColorRGBA c;
+                c.b = rgb_[0 + 3 * (i + w * j)] / 255.0f;
+                c.g = rgb_[1 + 3 * (i + w * j)] / 255.0f;
+                c.r = rgb_[2 + 3 * (i + w * j)] / 255.0f;
+                c.a = 1.0;
+                points.colors.push_back(c);
+            }
+        }
+        marker_visualization_pub.publish(points);
+    }
+
+//    ROS_INFO_STREAM_THROTTLE(1.0,pose);
     publishModel();
 }
 

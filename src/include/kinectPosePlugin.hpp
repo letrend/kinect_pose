@@ -25,6 +25,8 @@
 #include <thread>
 #include <Eigen/Core>
 #include <mutex>
+#include <tf/transform_broadcaster.h>
+#include <tf/tf.h>
 #endif
 
 using namespace std;
@@ -57,13 +59,15 @@ public:
     void publishModel();
 
 public slots:
-    void renderImages(float mean_time);
+    void updateData(float mean_time);
 
 signals:
-    void imagesReady(float mean_time);
+    void dataReady(float mean_time);
 
 public Q_SLOTS:
     void resetPose();
+    void renderImages();
+    void showLiveView();
 private:
     ros::NodeHandlePtr nh;
     pair<uint, uint> currentID;
@@ -76,4 +80,8 @@ private:
     bool getPose = true;
     Matrix4d pose;
     mutex mux;
+    Vector3d trans;
+    Matrix3d rot;
+    tf::TransformBroadcaster tf_broadcaster;
+    bool renderImages_flag = false, showLiveView_flag = false;
 };
