@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.6.0)
 
 project(kinect_pose)
 
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -g")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -O3")
 
 #==============================================================================
 # Dependencies
@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS roscpp std_msgs geometry_msgs message_ge
 #generate_messages(DEPENDENCIES std_msgs geometry_msgs)
 catkin_package(CATKIN_DEPENDS message_runtime message_generation)
 
+#qt4
 find_package(Qt4)
 find_package(Protobuf REQUIRED)
 include(${QT_USE_FILE})
@@ -24,7 +25,8 @@ include_directories(${freenect2_INCLUDE_DIR})
 # CUDA
 SET(CUDA_TOOLKIT_ROOT_DIR /opt/cuda)
 FIND_PACKAGE(CUDA REQUIRED)
-SET(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -Xcompiler -g -gencode=arch=compute_50,code=sm_50 --use_fast_math)# -Xcompiler -DDEBUG -Xcompiler -g
+SET(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -gencode=arch=compute_50,code=sm_50 --use_fast_math)# -Xcompiler -DDEBUG
+#-Xcompiler -g
 # preprocessor define: source directory
 ADD_DEFINITIONS(-DTSDF_CUDA_SOURCE_DIR=${PROJECT_SOURCE_DIR})
 

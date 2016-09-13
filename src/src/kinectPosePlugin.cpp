@@ -27,7 +27,7 @@ KinectPosePlugin::KinectPosePlugin(QWidget *parent)
     QLabel *depthimage = new QLabel(tr("depthimage"));
     depthimage->setObjectName("depthimage");
     frameLayout->addWidget(depthimage);
-    
+
     // Add frameLayout to the frame
     mainFrame->setLayout(frameLayout);
 
@@ -92,9 +92,8 @@ void KinectPosePlugin::poseEstimation(){
         icpcuda->getPoseFromDepth(depth0,depth1);
         emit imagesReady(icpcuda->mean_time);
         pose = icpcuda->getPose();
+//        ROS_INFO_STREAM_THROTTLE(1.0,"speed: " << icpcuda->mean_time << "\npose\n" << pose);
         std::swap(depth0, depth1);
-        ROS_INFO_STREAM_THROTTLE(1.0,pose);
-        publishModel();
     }
     ROS_INFO("stop pose estimation");
 }
@@ -130,7 +129,7 @@ void KinectPosePlugin::publishModel(){
 
 void KinectPosePlugin::renderImages(float mean_time){
     QLabel *speed = this->findChild<QLabel *>("speed");
-    speed->setText("speed: " + QString::number(mean_time));
+    speed->setText("speed: " + QString::number(mean_time) + " ms");
     speed->repaint();
     {
         QLabel *rgbmage = this->findChild<QLabel *>("rgbimage");
@@ -155,14 +154,16 @@ void KinectPosePlugin::renderImages(float mean_time){
 
     {
         QLabel *depthimage = this->findChild<QLabel *>("depthimage");
+        depth0.convertTo(depth0, CV_32F);
         int w = depth0.cols;
         int h = depth0.rows;
         QImage qim_depth(w, h, QImage::Format_RGB32);
-        unsigned short *a = (unsigned short *) depth0.data;
+        float *a = (float *) depth0.data;
         QRgb pixel;
         for (int i = 0; i < w; i++) {
             for (int j = 0; j < h; j++) {
-                int gray = (int) a[i + w * j];
+                // to meter divided by maximum range times max pixel value
+                int gray = (int) (a[i + w * j]/1000.0f/4.5f*255.0f);
                 pixel = qRgb(gray, gray, gray);
                 qim_depth.setPixel(i, j, pixel);
             }
@@ -171,6 +172,8 @@ void KinectPosePlugin::renderImages(float mean_time){
         depthimage->setPixmap(pixmap);
         depthimage->repaint();
     }
+    ROS_INFO_STREAM_THROTTLE(1.0,pose);
+    publishModel();
 }
 
 PLUGINLIB_EXPORT_CLASS(KinectPosePlugin, rviz::Panel)
