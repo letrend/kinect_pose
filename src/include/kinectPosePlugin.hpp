@@ -57,10 +57,10 @@ public:
     void publishModel();
 
 public slots:
-    void renderImages();
+    void renderImages(float mean_time);
 
 signals:
-    void imagesReady();
+    void imagesReady(float mean_time);
 
 public Q_SLOTS:
     void resetPose();

@@ -16,6 +16,10 @@ KinectPosePlugin::KinectPosePlugin(QWidget *parent)
     connect(resetpose, SIGNAL(clicked()), this, SLOT(resetPose()));
     frameLayout->addWidget(resetpose);
 
+    QLabel *speed = new QLabel(tr("speed: "));
+    speed->setObjectName("speed");
+    frameLayout->addWidget(speed);
+
     QLabel *rgbimage = new QLabel(tr("rgbimage"));
     rgbimage->setObjectName("rgbimage");
     frameLayout->addWidget(rgbimage);
@@ -58,7 +62,7 @@ KinectPosePlugin::KinectPosePlugin(QWidget *parent)
 
     odometry_thread = boost::shared_ptr<std::thread>(new std::thread(&KinectPosePlugin::poseEstimation, this));
 
-    QObject::connect(this, SIGNAL(imagesReady()), this, SLOT(renderImages()));
+    QObject::connect(this, SIGNAL(imagesReady(float)), this, SLOT(renderImages(float)));
 }
 
 KinectPosePlugin::~KinectPosePlugin(){
@@ -85,8 +89,8 @@ void KinectPosePlugin::poseEstimation(){
         device->updateFrames();
         device->getDepthMM(depth1);
         device->getRgbMapped2Depth(rgb);
-        emit imagesReady();
         icpcuda->getPoseFromDepth(depth0,depth1);
+        emit imagesReady(icpcuda->mean_time);
         pose = icpcuda->getPose();
         std::swap(depth0, depth1);
         ROS_INFO_STREAM_THROTTLE(1.0,pose);
@@ -124,32 +128,49 @@ void KinectPosePlugin::publishModel(){
     marker_visualization_pub.publish(mesh);
 }
 
-void KinectPosePlugin::renderImages(){
+void KinectPosePlugin::renderImages(float mean_time){
+    QLabel *speed = this->findChild<QLabel *>("speed");
+    speed->setText("speed: " + QString::number(mean_time));
+    speed->repaint();
+    {
+        QLabel *rgbmage = this->findChild<QLabel *>("rgbimage");
+        int w = rgb.cols;
+        int h = rgb.rows;
+        QImage qim_rgb(w, h, QImage::Format_RGB32);
+        float *a = (float *) rgb.data;
+        QRgb pixel;
+        for (int i = 0; i < w; i++) {
+            for (int j = 0; j < h; j++) {
+                int blue = (int) (a[0 + 3 * (i + w * j)]*255.0f);
+                int green = (int) (a[1 + 3 * (i + w * j)]*255.0f);
+                int red = (int) (a[2 + 3 * (i + w * j)]*255.0f);
+                pixel = qRgb(red, green, blue);
+                qim_rgb.setPixel(i, j, pixel);
+            }
+        }
+        QPixmap pixmap = QPixmap::fromImage(qim_rgb);
+        rgbmage->setPixmap(pixmap);
+        rgbmage->repaint();
+    }
 
-    QLabel *rgbimage = this->findChild<QLabel *>("rgbimage");
-    cv::Mat rgbcopy;
-    rgb.convertTo(rgbcopy, CV_BGR2RGB);
-    QImage image1= QImage((uchar*) rgbcopy.data, rgbcopy.cols, rgbcopy.rows, rgbcopy.step, QImage::Format_RGB32);
-//
-    //show Qimage using QLabel
-    rgbimage->setPixmap(QPixmap::fromImage(image1));
-    rgbimage->repaint();
-
-//    QLabel *depthimage = this->findChild<QLabel *>("depthimage");
-//    w = depth0.cols;
-//    h = depth0.rows;
-//    QImage qim_depth(w, h, QImage::Format_RGB32);
-//    a = (float*)depth0.data;
-//    for (int i = 0; i < w; i++) {
-//        for (int j = 0; j < h; j++) {
-//            int gray = (int) a[i + w*j];
-//            pixel = qRgb(gray, gray, gray);
-//            qim_depth.setPixel(i, j, pixel);
-//        }
-//    }
-//    pixmap = QPixmap::fromImage(qim_depth);
-//    depthimage->setPixmap(pixmap);
-//    depthimage->repaint();
+    {
+        QLabel *depthimage = this->findChild<QLabel *>("depthimage");
+        int w = depth0.cols;
+        int h = depth0.rows;
+        QImage qim_depth(w, h, QImage::Format_RGB32);
+        unsigned short *a = (unsigned short *) depth0.data;
+        QRgb pixel;
+        for (int i = 0; i < w; i++) {
+            for (int j = 0; j < h; j++) {
+                int gray = (int) a[i + w * j];
+                pixel = qRgb(gray, gray, gray);
+                qim_depth.setPixel(i, j, pixel);
+            }
+        }
+        QPixmap pixmap = QPixmap::fromImage(qim_depth);
+        depthimage->setPixmap(pixmap);
+        depthimage->repaint();
+    }
 }
 
 PLUGINLIB_EXPORT_CLASS(KinectPosePlugin, rviz::Panel)

@@ -46,6 +46,7 @@ include_directories(${EIGEN3_INCLUDE_DIRS})
 
 include_directories( include/
         ICPCUDA/src
+        kinect_utilities/include
         )
 
 #==============================================================================
